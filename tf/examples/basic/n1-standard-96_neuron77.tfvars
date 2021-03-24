@@ -34,7 +34,8 @@ controller_disk_size_gb = 2000
 # controller_secondary_disk_type = "pd-ssd"
 
 login_machine_type = "n1-standard-2"
-# login_disk_type    = "pd-standard"
+login_image        = "https://www.googleapis.com/compute/v1/projects/ecas2-nsf1904444/global/images/centos-7-neuron-7-7-netpyne" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
+login_disk_type    = "pd-standard"
 login_disk_size_gb = 20
 # login_labels = {
 #   key1 = "val1"
