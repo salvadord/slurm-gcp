@@ -1,4 +1,4 @@
-cluster_name = "g1-n1"
+cluster_name = "g2-n1"
 project      = "ecas2-nsf1904444"
 zone         = "us-central1-f"
 
