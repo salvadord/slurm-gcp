@@ -211,7 +211,9 @@ def expand_machine_type():
 
         if type_resp:
             cpus = type_resp['guestCpus']
-            machine['cpus'] = cpus // (1 if part.image_hyperthreads else 2)
+            machine['cpus'] = (
+                cpus // (1 if part.image_hyperthreads else 2) or 1
+            )
 
             # Because the actual memory on the host will be different than
             # what is configured (e.g. kernel will take it). From
@@ -242,6 +244,7 @@ def install_slurm_conf():
         'resume_timeout': RESUME_TIMEOUT,
         'suspend_timeout': SUSPEND_TIMEOUT,
         'suspend_time': cfg.suspend_time,
+        'complete_wait_time': cfg.complete_wait_time,
         'mpi_default': mpi_default,
     }
     conf_resp = util.get_metadata('attributes/slurm_conf_tpl')
@@ -266,7 +269,9 @@ def install_slurm_conf():
                 part.max_node_count - 1)
 
         conf += ("NodeName=DEFAULT "
-                 f"CPUs={machine['cpus']} "
+                 "Sockets=1 "
+                 f"CoresPerSocket={machine['cpus']} "
+                 "ThreadsPerCore=1 "
                  f"RealMemory={machine['memory']} "
                  "State=UNKNOWN")
         conf += '\n'
@@ -288,7 +293,7 @@ def install_slurm_conf():
         def_mem_per_cpu = max(100, machine['memory'] // machine['cpus'])
 
         conf += ("PartitionName={} Nodes={} MaxTime=INFINITE "
-                 "State=UP DefMemPerCPU={} LLN=yes"
+                 "State=UP DefMemPerCPU={} LLN=no"
                  .format(part.name, part_nodes,
                          def_mem_per_cpu))
         if part.exclusive:
@@ -719,6 +724,9 @@ def setup_compute():
     mount_fstab()
 
     pid = util.get_pid(cfg.hostname)
+    if (not cfg.instance_defs[pid].image_hyperthreads and
+            shutil.which('google_mpi_tuning')):
+        util.run("google_mpi_tuning --nosmt")
     if cfg.instance_defs[pid].gpu_count:
         retries = n = 50
         while util.run("nvidia-smi").returncode != 0 and n > 0:
@@ -726,16 +734,17 @@ def setup_compute():
             log.info(f"Nvidia driver not yet loaded, try {retries-n}")
             time.sleep(5)
 
-    setup_slurmd_cronjob()
-    util.run("systemctl restart munge")
-    util.run("systemctl enable slurmd")
-    util.run("systemctl start slurmd")
-
     try:
         util.run(str(dirs.scripts/'custom-compute-install'))
     except Exception:
         # Ignore blank files with no shell magic.
         pass
+
+    setup_slurmd_cronjob()
+    util.run("systemctl restart munge")
+    util.run("systemctl enable slurmd")
+    util.run("systemctl start slurmd")
+
     log.info("Done setting up compute")
 
 

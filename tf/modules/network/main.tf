@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -92,7 +94,7 @@ resource "google_compute_firewall" "cluster_iap_ssh_firewall" {
 
   allow {
     protocol = "tcp"
-    ports    = ["22"]
+    ports    = ["22", "6842", "8642"]
   }
 }
 

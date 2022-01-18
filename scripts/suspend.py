@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import time
+from itertools import groupby
 from pathlib import Path
 
 import googleapiclient.discovery
@@ -45,7 +46,7 @@ if cfg.google_app_cred_path:
 def delete_instances_cb(request_id, response, exception):
     if exception is not None:
         log.error(f"delete exception for node {request_id}: {exception}")
-        if "Rate Limit Exceeded" in str(exception):
+        if "Rate Limit Exceeded" in str(exception) or "Quota exceeded" in str(exception):
             retry_list.append(request_id)
     else:
         operations[request_id] = response
@@ -61,6 +62,11 @@ def delete_instances(compute, node_list, arg_job_id):
         curr_batch,
         compute.new_batch_http_request(callback=delete_instances_cb))
 
+    def_list = {pid: cfg.instance_defs[pid]
+                for pid, nodes in groupby(node_list, util.get_pid)}
+    regional_instances = util.get_regional_instances(compute, cfg.project,
+                                                     def_list)
+
     for node_name in node_list:
 
         pid = util.get_pid(node_name)
@@ -68,27 +74,22 @@ def delete_instances(compute, node_list, arg_job_id):
             # Node was deleted by EpilogSlurmctld, skip for SuspendProgram
             continue
 
+        zone = None
+        if cfg.instance_defs[pid].regional_capacity:
+            instance = regional_instances.get(node_name, None)
+            if instance is None:
+                log.debug("Regional node not found. Already deleted?")
+                continue
+            zone = instance['zone'].split('/')[-1]
+        else:
+            zone = cfg.instance_defs[pid].zone
+
         if req_cnt >= TOT_REQ_CNT:
             req_cnt = 0
             curr_batch += 1
             batch_list.insert(
                 curr_batch,
                 compute.new_batch_http_request(callback=delete_instances_cb))
-
-        zone = None
-        if cfg.instance_defs[pid].regional_capacity:
-            node_find = util.ensure_execute(
-                compute.instances().aggregatedList(
-                    project=cfg.project, filter=f'name={node_name}'))
-            for key, zone_value in node_find['items'].items():
-                if 'instances' in zone_value:
-                    zone = zone_value['instances'][0]['zone'].split('/')[-1]
-                    break
-            if zone is None:
-                log.error(f"failed to find regional node '{node_name}' to delete")
-                continue
-        else:
-            zone = cfg.instance_defs[pid].zone
 
         batch_list[curr_batch].add(
             compute.instances().delete(project=cfg.project,
@@ -138,6 +139,24 @@ def main(arg_nodes, arg_job_id):
                          check=True, get_stdout=True).stdout
     node_list = nodes_str.splitlines()
 
+    # Get static node list
+    exc_nodes_hostlist = util.run(
+        f"{SCONTROL} show config | "
+        "awk '/SuspendExcNodes.*=/{print $3}'", shell=True,
+        get_stdout=True).stdout
+    nodes_exc_str = util.run(f"{SCONTROL} show hostnames {exc_nodes_hostlist}",
+                             check=True, get_stdout=True).stdout
+    node_exc_list = sorted(nodes_exc_str.splitlines(), key=util.get_pid)
+
+    # Generate new arg_nodes without static nodes
+    dynamic_nodes = list((set(node_exc_list) ^ set(node_list)) & set(node_list))
+    node_list = dynamic_nodes
+    arg_nodes = util.to_hostlist(SCONTROL, dynamic_nodes)
+
+    if len(node_list) == 0:
+        log.debug(f"Static nodes removed from request. No nodes remain in request.")
+        return
+
     pid = util.get_pid(node_list[0])
     if (arg_job_id and not cfg.instance_defs[pid].exclusive):
         # Don't delete from calls by EpilogSlurmctld
@@ -145,14 +164,12 @@ def main(arg_nodes, arg_job_id):
 
     if arg_job_id:
         # Mark nodes as off limits to new jobs while powering down.
-        # Have to use "down" because it's the only, current, way to remove the
-        # power_up flag from the node -- followed by a power_down -- if the
-        # PrologSlurmctld fails with a non-zero exit code.
+        # Note: If PrologSlurmctld fails with a non-zero exit code,
+        # "powering_up" flag would get stuck on the node. In 20.11 and prior:
+        # state=down followed by state=power_down could clear it. In 21.08,
+        # state=power_down_force can clear it.
         util.run(
-            f"{SCONTROL} update node={arg_nodes} state=down reason='{arg_job_id} finishing'")
-        # Power down nodes in slurm, so that they will become available again.
-        util.run(
-            f"{SCONTROL} update node={arg_nodes} state=power_down")
+            f"{SCONTROL} update node={arg_nodes} state=power_down_force")
 
     while True:
         delete_instances(compute, node_list, arg_job_id)
@@ -170,6 +187,8 @@ def main(arg_nodes, arg_job_id):
                 util.wait_for_operation(compute, cfg.project, operation)
             except Exception:
                 log.exception(f"Error in deleting {operation['name']} to slurm")
+        # now that the instances are gone, resume to put back in service
+        util.run(f"{SCONTROL} update node={arg_nodes} state=resume")
 
     log.debug("done deleting instances")
 

@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -84,7 +86,7 @@ variable "partitions" {
       local_mount  = string,
       fs_type      = string,
     mount_options = string })),
-    preemptible_bursting = bool,
+    preemptible_bursting = string,
     vpc_subnet           = string,
     exclusive            = bool,
     enable_placement     = bool,

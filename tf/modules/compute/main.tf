@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -17,18 +19,19 @@ locals {
   static_list = flatten([
     for pid in range(length(var.partitions)) : [
       for n in range(var.partitions[pid].static_node_count) : {
-        name           = "${var.cluster_name}-compute-${pid}-${n}"
-        boot_disk_size = var.partitions[pid].compute_disk_size_gb
-        boot_disk_type = var.partitions[pid].compute_disk_type
-        image          = var.partitions[pid].image
-        labels         = var.partitions[pid].compute_labels
-        machine_type   = var.partitions[pid].machine_type
-        sa_email       = var.service_account
-        sa_scopes      = var.scopes
-        template       = var.partitions[pid].instance_template
-        zone           = var.partitions[pid].zone
-        gpu_type       = var.partitions[pid].gpu_type
-        gpu_count      = var.partitions[pid].gpu_count
+        name               = "${var.cluster_name}-compute-${pid}-${n}"
+        boot_disk_size     = var.partitions[pid].compute_disk_size_gb
+        boot_disk_type     = var.partitions[pid].compute_disk_type
+        image              = var.partitions[pid].image
+        image_hyperthreads = var.partitions[pid].image_hyperthreads
+        labels             = var.partitions[pid].compute_labels
+        machine_type       = var.partitions[pid].machine_type
+        sa_email           = var.service_account
+        sa_scopes          = var.scopes
+        template           = var.partitions[pid].instance_template
+        zone               = var.partitions[pid].zone
+        gpu_type           = var.partitions[pid].gpu_type
+        gpu_count          = var.partitions[pid].gpu_count
         subnet = (var.partitions[pid].vpc_subnet != null
           ? var.partitions[pid].vpc_subnet
         : "${var.cluster_name}-${join("-", slice(split("-", var.partitions[pid].zone), 0, 2))}")
@@ -42,6 +45,9 @@ locals {
   template_map = {
     for static in local.static_list : static.name => static if static.template != null
   }
+
+  custom-compute-install = var.compute_startup_script != null? var.compute_startup_script : file("${path.module}/../../../scripts/custom-compute-install")
+
 }
 
 
@@ -58,7 +64,7 @@ resource "google_compute_instance" "compute_node" {
 
   boot_disk {
     initialize_params {
-      image = each.value.image
+      image = var.intel_select_solution == "software_only" || var.intel_select_solution == "full_config" ? "projects/${var.project}/global/images/schedmd-slurm-hpc-intel-compute" : each.value.image
       type  = each.value.boot_disk_type
       size  = each.value.boot_disk_size
     }
@@ -102,8 +108,11 @@ resource "google_compute_instance" "compute_node" {
   metadata_startup_script = file("${path.module}/../../../scripts/startup.sh")
 
   metadata = {
-    enable-oslogin = "TRUE"
-    VmDnsSetting   = "GlobalOnly"
+    enable-oslogin    = "TRUE"
+    VmDnsSetting      = "GlobalOnly"
+    instance_type     = "compute"
+    google_mpi_tuning = each.value.image_hyperthreads ? null : "--nosmt"
+    custom-compute-install    = local.custom-compute-install
 
     config = jsonencode({
       cluster_name              = var.cluster_name,
@@ -114,8 +123,8 @@ resource "google_compute_instance" "compute_node" {
       zone                      = var.zone
     })
 
-    setup-script     = file("${path.module}/../../../scripts/setup.py")
-    util-script      = file("${path.module}/../../../scripts/util.py")
+    setup-script = file("${path.module}/../../../scripts/setup.py")
+    util-script  = file("${path.module}/../../../scripts/util.py")
   }
 }
 
@@ -182,8 +191,11 @@ resource "google_compute_instance_from_template" "compute_node" {
   metadata_startup_script = file("${path.module}/../../../scripts/startup.sh")
 
   metadata = {
-    enable-oslogin = "TRUE"
-    VmDnsSetting   = "GlobalOnly"
+    enable-oslogin    = "TRUE"
+    VmDnsSetting      = "GlobalOnly"
+    instance_type     = "compute"
+    google_mpi_tuning = each.value.image_hyperthreads ? null : "--nosmt"
+    custom-compute-install    = local.custom-compute-install
 
     config = jsonencode({
       cluster_name              = var.cluster_name,
@@ -194,7 +206,7 @@ resource "google_compute_instance_from_template" "compute_node" {
       zone                      = var.zone
     })
 
-    setup-script     = file("${path.module}/../../../scripts/setup.py")
-    util-script      = file("${path.module}/../../../scripts/util.py")
+    setup-script = file("${path.module}/../../../scripts/setup.py")
+    util-script  = file("${path.module}/../../../scripts/util.py")
   }
 }

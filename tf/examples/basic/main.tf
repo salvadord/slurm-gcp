@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -15,6 +17,8 @@
 
 locals {
   region = join("-", slice(split("-", var.zone), 0, 2))
+  par_map = {
+  for item in var.partitions : item.name => item }
 }
 
 provider "google" {
@@ -69,7 +73,11 @@ module "slurm_cluster_controller" {
   subnet_depend                 = module.slurm_cluster_network.subnet_depend
   subnetwork_name               = var.subnetwork_name
   suspend_time                  = var.suspend_time
+  complete_wait_time            = var.complete_wait_time
   zone                          = var.zone
+  intel_select_solution         = var.intel_select_solution
+  controller_startup_script     = var.controller_startup_script
+  compute_startup_script        = var.compute_startup_script
 }
 
 module "slurm_cluster_login" {
@@ -96,6 +104,7 @@ module "slurm_cluster_login" {
   subnet_depend             = module.slurm_cluster_network.subnet_depend
   subnetwork_name           = var.subnetwork_name
   zone                      = var.zone
+  login_startup_script      = var.login_startup_script
 }
 
 module "slurm_cluster_compute" {
@@ -114,5 +123,14 @@ module "slurm_cluster_compute" {
   subnet_depend              = module.slurm_cluster_network.subnet_depend
   subnetwork_name            = var.subnetwork_name
   zone                       = var.zone
+  intel_select_solution      = var.intel_select_solution
+  compute_startup_script     = var.compute_startup_script
 }
 
+resource "null_resource" "check_intel_select_solution" {
+  for_each = local.par_map
+  triggers = (var.intel_select_solution == null || var.intel_select_solution == "software_only" ||
+    (var.intel_select_solution == "full_config" && each.value.machine_type == "c2-standard-60") ? {} :
+    file("ERROR: Configuration failed as full_config requires machine_type of compute nodes to be c2-standard-60.")
+  )
+}

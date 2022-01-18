@@ -88,6 +88,8 @@ resources:
           value: TRUE
         - key: VmDnsSetting
           value: GlobalOnly
+        - key: instance_type
+          value: controller
         - key: startup-script
           value: |
             {{ imports['startup.sh']|indent(12) }}
@@ -121,9 +123,6 @@ resources:
         - key: cgroup_conf_tpl
           value: |
             {{ imports['cgroup.conf.tpl']|indent(12) }}
-        - key: fluentd_conf_tpl
-          value: |
-            {{ imports['controller-fluentd.conf.tpl']|indent(12) }}
 
 
 {% for n in range(properties['login_node_count']) %}
@@ -238,6 +237,12 @@ resources:
           value: TRUE
         - key: VmDnsSetting
           value: GlobalOnly
+        - key: instance_type
+          value: compute
+      {% if not part['image_hyperthreads'] %}
+        - key: google_mpi_tuning
+          value: --nosmt
+      {% endif %}
         - key: startup-script
           value: |
             {{ imports['startup.sh']|indent(12) }}
@@ -250,9 +255,6 @@ resources:
         - key: custom-compute-install
           value: |
             {{ imports['custom-compute-install']|indent(12) }}
-        - key: fluentd_conf_tpl
-          value: |
-            {{ imports['compute-fluentd.conf.tpl']|indent(12) }}
 {% endfor %}
 
 {% endfor %}

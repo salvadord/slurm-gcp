@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -27,6 +29,25 @@ variable "cluster_name" {
   description = "Name of the cluster"
   type        = string
 }
+
+variable "controller_startup_script" {
+  description = "Custom startup script to run on the controller"
+  type        = string
+  default     = null
+}
+
+variable "compute_startup_script" {
+  description = "Custom startup script to run on the compute nodes"
+  type        = string
+  default     = null
+}
+
+variable "login_startup_script" {
+  description = "Custom startup script to run on the login nodes"
+  type        = string
+  default     = null
+}
+
 
 variable "compute_node_scopes" {
   description = "Scopes to apply to compute nodes."
@@ -236,7 +257,7 @@ variable "partitions" {
       local_mount  = string,
       fs_type      = string,
     mount_options = string })),
-    preemptible_bursting = bool,
+    preemptible_bursting = string,
     vpc_subnet           = string,
     exclusive            = bool,
     enable_placement     = bool,
@@ -266,14 +287,42 @@ variable "suspend_time" {
   default     = 300
 }
 
+variable "complete_wait_time" {
+  description = "Time (in sec) to wait before considering a completing job as completed. Warning: high values will reduce schduling throughput. Suggested to keep between 0 and 'suspend_timeout'."
+  default     = 60
+}
+
 variable "zone" {
   type = string
+}
+
+variable "intel_select_solution" {
+  description = "Configure the cluster to meet the performance requirement of the Intel Select Solution"
+  type        = string
+  default     = null
+}
+
+output "zone" {
+  value = var.zone
+}
+
+output "controller_name" {
+  value = module.slurm_cluster_controller.controller_node_name
 }
 
 output "controller_network_ips" {
   value = module.slurm_cluster_controller.instance_network_ips
 }
 
+output "login_names" {
+  value = module.slurm_cluster_login.names
+}
+
 output "login_network_ips" {
   value = module.slurm_cluster_login.instance_network_ips
+}
+
+output "config" {
+  value     = module.slurm_cluster_controller.config
+  sensitive = true
 }

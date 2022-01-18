@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -14,6 +16,7 @@
 # limitations under the License.
 
 locals {
+  custom-compute-install = var.login_startup_script != null? var.login_startup_script : file("${path.module}/../../../scripts/custom-compute-install")
 }
 
 data "google_compute_default_service_account" "default" {}
@@ -79,6 +82,8 @@ resource "google_compute_instance" "login_node" {
     })
 
     setup-script = file("${path.module}/../../../scripts/setup.py")
+    custom-compute-install    = local.custom-compute-install
+
   }
 }
 
@@ -150,5 +155,7 @@ resource "google_compute_instance_from_template" "login_node" {
     })
 
     setup-script = file("${path.module}/../../../scripts/setup.py")
+    custom-compute-install    = local.custom-compute-install
+
   }
 }

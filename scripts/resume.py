@@ -65,6 +65,14 @@ def create_instance(compute, instance_def, node_list, placement_group_name):
     if custom_compute.exists():
         meta_files['custom-compute-install'] = str(custom_compute)
 
+    metadata = {
+        'enable-oslogin': 'TRUE',
+        'VmDnsSetting': 'GlobalOnly',
+        'instance_type': 'compute',
+    }
+    if not instance_def.image_hyperthreads:
+        metadata['google_mpi_tuning'] = '--nosmt'
+
     config = {
         'name': 'notused',
 
@@ -83,10 +91,7 @@ def create_instance(compute, instance_def, node_list, placement_group_name):
 
         'metadata': {
             'items': [
-                {'key': 'enable-oslogin',
-                 'value': 'TRUE'},
-                {'key': 'VmDnsSetting',
-                 'value': 'GlobalOnly'},
+                *[{'key': k, 'value': v} for k, v in metadata.items()],
                 *[{'key': k, 'value': Path(v).read_text()} for k, v in meta_files.items()]
             ]
         }
@@ -94,6 +99,9 @@ def create_instance(compute, instance_def, node_list, placement_group_name):
 
     if instance_def.machine_type:
         config['machineType'] = instance_def.machine_type
+
+    if cfg.intel_select_solution == "software_only" or cfg.intel_select_solution == "full_config":
+        instance_def.image = "projects/{}/global/images/schedmd-slurm-hpc-intel-compute".format(cfg.project)
 
     if (instance_def.image and
             instance_def.compute_disk_type and
@@ -129,7 +137,13 @@ def create_instance(compute, instance_def, node_list, placement_group_name):
         }]
         config['scheduling'] = {'onHostMaintenance': 'TERMINATE'}
 
-    if instance_def.preemptible_bursting:
+    if instance_def.preemptible_bursting.lower() == 'spot':
+        config['scheduling'] = {
+            'provisioningModel': 'SPOT',
+            'onHostMaintenance': 'TERMINATE',
+            'automaticRestart': False
+        }
+    elif instance_def.preemptible_bursting.lower() != 'false':
         config['scheduling'] = {
             'preemptible': True,
             'onHostMaintenance': 'TERMINATE',
@@ -168,10 +182,8 @@ def create_instance(compute, instance_def, node_list, placement_group_name):
     if instance_def.regional_capacity:
         if instance_def.regional_policy:
             body['locationPolicy'] = instance_def.regional_policy
-        op = compute.regionInstances().bulkInsert(
-            project=cfg.project, region=instance_def.region,
-            body=body)
-        return op.execute()
+        return util.ensure_execute(compute.regionInstances().bulkInsert(
+            project=cfg.project, region=instance_def.region, body=body))
 
     return util.ensure_execute(compute.instances().bulkInsert(
         project=cfg.project, zone=instance_def.zone, body=body))
@@ -192,7 +204,7 @@ def add_instances(node_chunk):
                               "Slurm_GCP_Scripts/1.2 (GPN:SchedMD)")
         creds = compute_engine.Credentials()
         auth_http = google_auth_httplib2.AuthorizedHttp(creds, http=http)
-    compute = googleapiclient.discovery.build('compute', 'v1',
+    compute = googleapiclient.discovery.build('compute', 'beta',
                                               http=auth_http,
                                               cache_discovery=False)
     pid = util.get_pid(node_list[0])
@@ -204,7 +216,7 @@ def add_instances(node_chunk):
         log.error(f"failed to add {node_list[0]}*{len(node_list)} to slurm, {e}")
         if instance_def.exclusive:
             os._exit(1)
-        down_nodes(node_list, e)
+        down_nodes(node_list, e._get_reason())
         return
 
     result = util.wait_for_operation(compute, cfg.project, operation)
@@ -266,7 +278,7 @@ def create_placement_groups(arg_job_id, vm_count, region):
                               "Slurm_GCP_Scripts/1.2 (GPN:SchedMD)")
         creds = compute_engine.Credentials()
         auth_http = google_auth_httplib2.AuthorizedHttp(creds, http=http)
-    compute = googleapiclient.discovery.build('compute', 'v1',
+    compute = googleapiclient.discovery.build('compute', 'beta',
                                               http=auth_http,
                                               cache_discovery=False)
 
@@ -303,10 +315,20 @@ def create_placement_groups(arg_job_id, vm_count, region):
 
 def main(arg_nodes, arg_job_id):
     log.debug(f"Bursting out: {arg_nodes} {arg_job_id}")
+
     # Get node list
     nodes_str = util.run(f"{SCONTROL} show hostnames {arg_nodes}",
                          check=True, get_stdout=True).stdout
     node_list = sorted(nodes_str.splitlines(), key=util.get_pid)
+
+   # Get static node list
+    exc_nodes_hostlist = util.run(
+        f"{SCONTROL} show config | "
+        "awk '/SuspendExcNodes.*=/{print $3}'", shell=True,
+        get_stdout=True).stdout
+    nodes_exc_str = util.run(f"{SCONTROL} show hostnames {exc_nodes_hostlist}",
+                             check=True, get_stdout=True).stdout
+    node_exc_list = sorted(nodes_exc_str.splitlines(), key=util.get_pid)
 
     placement_groups = None
     pid = util.get_pid(node_list[0])
@@ -316,6 +338,15 @@ def main(arg_nodes, arg_job_id):
 
     nodes_by_pid = {k: tuple(nodes)
                     for k, nodes in groupby(node_list, util.get_pid)}
+
+    req_static = list(set(node_exc_list).intersection(node_list))
+    if req_static:
+        static_nodes_by_pid = {k: tuple(nodes)
+                               for k, nodes in groupby(node_exc_list, util.get_pid)}
+        for pid in [pid for pid in nodes_by_pid
+                    if pid in static_nodes_by_pid]:
+            # Remove static nodes from request to prevent request failure
+            del nodes_by_pid[pid]
 
     if not arg_job_id:
         for pid in [pid for pid in nodes_by_pid

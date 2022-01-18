@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -154,7 +156,7 @@ variable "partitions" {
       local_mount  = string,
       fs_type      = string,
     mount_options = string })),
-    preemptible_bursting = bool,
+    preemptible_bursting = string,
     vpc_subnet           = string,
     exclusive            = bool,
     enable_placement     = bool,
@@ -162,6 +164,18 @@ variable "partitions" {
     regional_policy      = any,
     instance_template    = string,
   static_node_count = number }))
+}
+
+variable "controller_startup_script" {
+  description = "Custom startup script to run on the controller"
+  type        = string
+  default     = null
+}
+
+variable "compute_startup_script" {
+  description = "Custom startup script to run on the compute nodes"
+  type        = string
+  default     = null
 }
 
 variable "project" {
@@ -208,9 +222,20 @@ variable "suspend_time" {
   default     = 300
 }
 
+variable "complete_wait_time" {
+  description = "Time (in sec) to wait before considering a completing job as completed. Warning: high values will reduce schduling throughput. Suggested to keep between 0 and 'suspend_timeout'."
+  default     = 60
+}
+
 variable "zone" {
   description = "Compute Platform zone where the notebook server will be located"
   default     = "us-central1-b"
+}
+
+variable "intel_select_solution" {
+  description = "Configure the cluster to meet the performance requirement of the Intel Select Solution"
+  default     = null
+  type        = string
 }
 
 output "controller_node_name" {
@@ -218,5 +243,10 @@ output "controller_node_name" {
 }
 
 output "instance_network_ips" {
-  value = [google_compute_instance.controller_node.*.network_interface.0.network_ip]
+  value = google_compute_instance.controller_node.*.network_interface.0.network_ip
+}
+
+output "config" {
+  value     = local.config
+  sensitive = true
 }

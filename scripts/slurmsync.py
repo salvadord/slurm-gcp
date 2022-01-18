@@ -43,6 +43,20 @@ if cfg.google_app_cred_path:
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = cfg.google_app_cred_path
 
 
+def to_hostlist(hostnames):
+    tmp_file = tempfile.NamedTemporaryFile(mode='w+t', delete=False)
+    tmp_file.writelines('\n'.join(hostnames))
+    tmp_file.close()
+    log.debug(f"tmp_file = {tmp_file.name}")
+
+    hostlist = util.run(
+        f"{SCONTROL} show hostlist {tmp_file.name}",
+        get_stdout=True).stdout.rstrip()
+    log.debug(f"hostlist = {hostlist}")
+    os.remove(tmp_file.name)
+    return hostlist
+
+
 def start_instances_cb(request_id, response, exception):
     if exception is not None:
         log.error("start exception: " + str(exception))
@@ -68,10 +82,9 @@ def start_instances(compute, node_list, gcp_nodes):
         zone = cfg.instance_defs[pid].zone
 
         if cfg.instance_defs[pid].regional_capacity:
-            g_node = next((item for item in gcp_nodes if item["name"] == node),
-                          None)
+            g_node = gcp_nodes.get(node, None)
             if not g_node:
-                log.error(f"Didn't regional GCP record for '{node}'")
+                log.error(f"Didn't find regional GCP record for '{node}'")
                 continue
             zone = g_node['zone'].split('/')[-1]
 
@@ -112,7 +125,7 @@ def main():
             # result is a list of tuples like:
             # (nodename, (base='base_state', flags=<set of state flags>))
             # from 'nodename,base_state+flag1+flag2'
-            # state flags include: CLOUD, COMPLETING, DRAIN, FAIL, POWER,
+            # state flags include: CLOUD, COMPLETING, DRAIN, FAIL, POWERED_DOWN,
             #   POWERING_DOWN
             # Modifiers on base state still include: @ (reboot), $ (maint),
             #   * (nonresponsive), # (powering up)
@@ -120,34 +133,26 @@ def main():
 
             def make_state_tuple(state):
                 return StateTuple(state[0], set(state[1:]))
-            s_nodes = [(node, make_state_tuple(args.split('+')))
+            s_nodes = {node: make_state_tuple(args.split('+'))
                        for node, args in
                        map(lambda x: x.split(','), nodes.rstrip().splitlines())
-                       if 'CLOUD' in args]
+                       if 'CLOUD' in args}
 
-        g_nodes = []
+        g_nodes = util.get_regional_instances(compute, cfg.project,
+                                              cfg.instance_defs)
         for pid, part in cfg.instance_defs.items():
             page_token = ""
             while True:
-                if cfg.instance_defs[pid].regional_capacity:
-                    resp = util.ensure_execute(
-                        compute.instances().aggregatedList(
-                            project=cfg.project, pageToken=page_token,
-                            filter=f'name={pid}-*'))
-                    for key, zone_value in resp['items'].items():
-                        if 'instances' in zone_value:
-                            g_nodes.extend(zone_value['instances'])
-                    if "nextPageToken" in resp:
-                        page_token = resp['nextPageToken']
-                        continue
-                else:
+                if not part.regional_capacity:
                     resp = util.ensure_execute(
                         compute.instances().list(
                             project=cfg.project, zone=part.zone,
+                            fields='items(name,zone,status),nextPageToken',
                             pageToken=page_token, filter=f"name={pid}-*"))
 
                     if "items" in resp:
-                        g_nodes.extend(resp['items'])
+                        g_nodes.update({instance['name']: instance
+                                       for instance in resp['items']})
                     if "nextPageToken" in resp:
                         page_token = resp['nextPageToken']
                         continue
@@ -157,35 +162,33 @@ def main():
         to_down = []
         to_idle = []
         to_start = []
-        for s_node, s_state in s_nodes:
-            g_node = next((item for item in g_nodes
-                           if item["name"] == s_node),
-                          None)
+        for s_node, s_state in s_nodes.items():
+            g_node = g_nodes.get(s_node, None)
             pid = util.get_pid(s_node)
 
-            if (('POWER' not in s_state.flags) and
+            if (('POWERED_DOWN' not in s_state.flags) and
                     ('POWERING_DOWN' not in s_state.flags)):
-                # slurm nodes that aren't in power_save and are stopped in GCP:
+                # slurm nodes that aren't powered down and are stopped in GCP:
                 #   mark down in slurm
                 #   start them in gcp
                 if g_node and (g_node['status'] == "TERMINATED"):
                     if not s_state.base.startswith('DOWN'):
                         to_down.append(s_node)
-                    if (cfg.instance_defs[pid].preemptible_bursting):
+                    if cfg.instance_defs[pid].preemptible_bursting != 'false':
                         to_start.append(s_node)
 
                 # can't check if the node doesn't exist in GCP while the node
                 # is booting because it might not have been created yet by the
                 # resume script.
                 # This should catch the completing states as well.
-                if (g_node is None and "#" not in s_state.base and
+                if (g_node is None and "POWERING_UP" not in s_state.flags and
                         not s_state.base.startswith('DOWN')):
                     to_down.append(s_node)
 
             elif g_node is None:
                 # find nodes that are down~ in slurm and don't exist in gcp:
                 #   mark idle~
-                if s_state.base.startswith('DOWN') and 'POWER' in s_state.flags:
+                if s_state.base.startswith('DOWN') and 'POWERED_DOWN' in s_state.flags:
                     to_idle.append(s_node)
                 elif 'POWERING_DOWN' in s_state.flags:
                     to_idle.append(s_node)
@@ -197,18 +200,7 @@ def main():
                 len(to_down), ",".join(to_down)))
             log.info("{} instances to start ({})".format(
                 len(to_start), ",".join(to_start)))
-
-            # write hosts to a file that can be given to get a slurm
-            # hostlist. Since the number of hosts could be large.
-            tmp_file = tempfile.NamedTemporaryFile(mode='w+t', delete=False)
-            tmp_file.writelines("\n".join(to_down))
-            tmp_file.close()
-            log.debug("tmp_file = {}".format(tmp_file.name))
-
-            hostlist = util.run(f"{SCONTROL} show hostlist {tmp_file.name}",
-                                check=True, get_stdout=True).stdout.rstrip()
-            log.debug("hostlist = {}".format(hostlist))
-            os.remove(tmp_file.name)
+            hostlist = to_hostlist(to_down)
 
             util.run(f"{SCONTROL} update nodename={hostlist} state=down "
                      "reason='Instance stopped/deleted'")
@@ -227,19 +219,24 @@ def main():
             log.info("{} instances to resume ({})".format(
                 len(to_idle), ','.join(to_idle)))
 
-            # write hosts to a file that can be given to get a slurm
-            # hostlist. Since the number of hosts could be large.
-            tmp_file = tempfile.NamedTemporaryFile(mode='w+t', delete=False)
-            tmp_file.writelines("\n".join(to_idle))
-            tmp_file.close()
-            log.debug("tmp_file = {}".format(tmp_file.name))
-
-            hostlist = util.run(f"{SCONTROL} show hostlist {tmp_file.name}",
-                                check=True, get_stdout=True).stdout.rstrip()
-            log.debug("hostlist = {}".format(hostlist))
-            os.remove(tmp_file.name)
-
+            hostlist = to_hostlist(to_idle)
             util.run(f"{SCONTROL} update nodename={hostlist} state=resume")
+
+        orphans = [
+            inst for inst, info in g_nodes.items()
+            if info['status'] == 'RUNNING' and (
+                inst not in s_nodes or 'POWERED_DOWN' in s_nodes[inst].flags
+            )
+        ]
+        if orphans:
+            if args.debug:
+                for orphan in orphans:
+                    info = g_nodes.get(orphan)
+                    state = s_nodes.get(orphan, None)
+                    log.debug(f"orphan {orphan}: status={info['status']} state={state}")
+            hostlist = to_hostlist(orphans)
+            log.info(f"{len(orphans)} orphan instances found to terminate: {hostlist}")
+            util.run(f"{SCRIPTS_DIR}/suspend.py {hostlist}")
 
     except Exception:
         log.exception("failed to sync instances")

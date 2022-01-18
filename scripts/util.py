@@ -212,6 +212,7 @@ class Config(NSDict):
                    'network_storage',
                    'login_network_storage',
                    'instance_defs',
+                   'intel_select_solution',
                    )
     PROPERTIES = (*SAVED_PROPS,
                   'munge_key',
@@ -219,6 +220,7 @@ class Config(NSDict):
                   'external_compute_ips',
                   'controller_secondary_disk',
                   'suspend_time',
+                  'complete_wait_time',
                   'login_node_count',
                   'cloudsql',
                   'partitions',
@@ -379,3 +381,56 @@ def get_group_operations(compute, project, operation):
             filter=f"operationGroupId={group_id}")
 
     return ensure_execute(operation)
+
+
+def get_regional_instances(compute, project, def_list):
+    """ Get instances that exist in regional capacity instance defs """
+
+    fields = 'items.zones.instances(name,zone,status),nextPageToken'
+    regional_instances = {}
+
+    region_filter = ' OR '.join(f'(name={pid}-*)' for pid, d in
+                                def_list.items() if d.regional_capacity)
+    if region_filter:
+        page_token = ""
+        while True:
+            resp = ensure_execute(
+                compute.instances().aggregatedList(
+                    project=project, filter=region_filter, fields=fields,
+                    pageToken=page_token))
+            if not resp:
+                break
+            for zone, zone_value in resp['items'].items():
+                if 'instances' in zone_value:
+                    regional_instances.update(
+                        {instance['name']: instance
+                         for instance in zone_value['instances']}
+                    )
+            if "nextPageToken" in resp:
+                page_token = resp['nextPageToken']
+                continue
+            break
+
+    return regional_instances
+
+
+def to_hostlist(scontrol, nodelist=[]):
+    """make hostlist from list of node names
+    """
+    import tempfile
+
+    if len(nodelist) == 0:
+        return None
+
+    # use tmp file because list could be large
+    tmp_file = tempfile.NamedTemporaryFile(mode='w+t', delete=False)
+    tmp_file.writelines("\n".join(nodelist))
+    tmp_file.close()
+    log.debug("tmp_file = {}".format(tmp_file.name))
+
+    hostlist = run(
+        f"{scontrol} show hostlist {tmp_file.name}", shell=True,
+        get_stdout=True).stdout.rstrip()
+    log.debug("hostlist = {}".format(hostlist))
+    os.remove(tmp_file.name)
+    return hostlist

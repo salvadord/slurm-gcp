@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -140,6 +142,16 @@ variable "zone" {
   default     = "us-central1-b"
 }
 
+output "names" {
+  value = google_compute_instance.login_node.*.name
+}
+
 output "instance_network_ips" {
-  value = [google_compute_instance.login_node.*.network_interface.0.network_ip]
+  value = google_compute_instance.login_node.*.network_interface.0.network_ip
+}
+
+variable "login_startup_script" {
+  description = "Custom startup script to run on the login node"
+  type        = string
+  default     = null
 }

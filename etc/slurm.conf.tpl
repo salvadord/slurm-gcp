@@ -83,7 +83,7 @@ TaskPlugin=task/affinity,task/cgroup
 #
 # TIMERS
 #BatchStartTimeout=10
-#CompleteWait=0
+CompleteWait={complete_wait_time}
 #EpilogMsgTime=2000
 #GetEnvTimeout=2
 #HealthCheckInterval=0
@@ -132,7 +132,7 @@ AccountingStorageHost={control_host}
 #AccountingStoragePort=
 AccountingStorageType=accounting_storage/slurmdbd
 #AccountingStorageUser=
-AccountingStoreJobComment=YES
+AccountingStoreFlags=job_comment
 ClusterName={name}
 #DebugFlags=powersave
 #JobCompHost=

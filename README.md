@@ -5,6 +5,8 @@ Platform](https://cloud.google.com), bursting out from an on-premise cluster to
 nodes in Google Cloud Platform and setting a multi-cluster/federated setup with
 a cluster that resides in Google Cloud Platform.
 
+A more detailed guide is found in the [Slurm on Google Cloud User Guide](https://goo.gle/slurm-gcp-user-guide).
+
 The supplied scripts can be modified to work with your environment.
 
 SchedMD provides professional services to help you get up and running in the
@@ -24,7 +26,9 @@ Also, join comunity discussions on either the
   * [Install using GCP Marketplace](#install-using-gcp-marketplace)
   * [Install using Terraform](#install-using-terraform)
 	* [Defining network storage mounts](#defining-network-storage-mounts)
-  * [Preinstalled Modules: OpenMPI](#preinstalled-modules-openmpi)
+  * [Public Slurm Images](#public-slurm-images)
+	* [Hyperthreads](hyperthreads)
+	* [Preinstalled Modules: OpenMPI](#preinstalled-modules-openmpi)
   * [Installing Custom Packages](#installing-custom-packages)
   * [Accessing Compute Nodes Directly](#accessing-compute-nodes-directly)
   * [OS Login](#os-login)
@@ -47,7 +51,7 @@ Platform. The scripts setup the following scenario:
   disk type, cpu platform, and maximum node count.
 
 Instances are created from images with Slurm and dependencies preinstalled. The default,
-`schedmd-slurm-public/schedmd-slurm-20-11-4-hpc-centos-7`, is based on the
+`schedmd-slurm-public/schedmd-slurm-21-08-2-hpc-centos-7`, is based on the
 Google-provided HPC-optimized CentOS 7 image.
 
 By default, `/apps` and `/home` are mounted from the controller across all instances
@@ -111,7 +115,25 @@ access the mount.
 
 `fs_type` can be one of: `nfs`, `cifs`, `lustre`, `gcsfuse`
 
-### Preinstalled modules: OpenMPI
+### Public Slurm images
+There are currently 3 public image families available for use with Slurm-GCP:  
+`projects/schedmd-slurm-public/global/images/family/`  
+* `schedmd-slurm-21-08-4-hpc-centos-7`  
+* `schedmd-slurm-21-08-4-centos-7`  
+* `schedmd-slurm-21-08-4-debian-10`  
+
+#### Hyperthreads
+The `hpc-centos-7` image has hyperthreads enabled by default, but can have the
+hyperthreads disabled by setting `image_hyperthreads` to `false`. The non-HPC 
+images, `centos-7` and `debian-10`, cannot have hyperthreads disabled.  Slurm-GCP 
+must know this for each compute node type when configuring the cluster so it can 
+configure the correct number of CPUs. `image_hyperthreads` must be set on the 
+partition definition to reflect the state of hyperthreads in the image.
+
+**NOTE:** The result of disabling hyperthreads is that half the number of CPUs will 
+be usable, eg. `c2-standard-4` compute nodes will have 2 CPUs.
+
+#### Preinstalled modules: OpenMPI
 OpenMPI has been compiled to work with Slurm's srun. e.g.
 ```
 $ module load openmpi
@@ -192,6 +214,18 @@ Hello world from processor g1-compute-0-2, rank 2 out of 4 processors
    the slurmsync script will mark the node as "down" and will attempt to
    restart the node. If there were any batch jobs on the preempted node, they
    will be requeued -- interactive (e.g. srun, salloc) jobs can't be requeued.
+
+   Setting `preemptible_bursting="spot"` will create Spot instances instead.
+   Currently, they are functionally equivalent to preemptible instances from the
+   Slurm-GCP point of view.
+
+   > Spot VMs are the latest version of preemptible VM instances. Preemptible
+   > VMs continue to be supported for new and existing VMs, and preemptible VMs
+   > now use the same pricing model as Spot VMs. However, Spot VMs provide new
+   > features that are not supported for preemptible VMs. For example,
+   > preemptible VMs can only run for up to 24 hours at a time, but Spot VMs do
+   > not have a maximum runtime.
+   [More information about Spot VMs](https://cloud.google.com/compute/docs/instances/spot)
 
 ## Hybrid Cluster for Bursting from On-Premise
 

@@ -1,3 +1,5 @@
+# Copyright 2021 SchedMD LLC
+# Modified for use with the Slurm Resource Manager.
 #
 # Copyright 2019 Google LLC
 #
@@ -15,6 +17,30 @@
 
 locals {
   controller_name = "${var.cluster_name}-controller"
+  config = jsonencode({
+    cloudsql                     = var.cloudsql
+    cluster_name                 = var.cluster_name
+    compute_node_scopes          = var.compute_node_scopes
+    intel_select_solution        = var.intel_select_solution
+    compute_node_service_account = var.compute_node_service_account == null ? data.google_compute_default_service_account.default.email : var.compute_node_service_account
+    controller_secondary_disk    = var.secondary_disk
+    external_compute_ips         = !var.disable_compute_public_ips
+    login_network_storage        = var.login_network_storage
+    login_node_count             = var.login_node_count
+    munge_key                    = var.munge_key
+    jwt_key                      = var.jwt_key
+    network_storage              = var.network_storage
+    partitions                   = var.partitions
+    project                      = var.project
+    region                       = var.region
+    shared_vpc_host_project      = var.shared_vpc_host_project
+    suspend_time                 = var.suspend_time
+    complete_wait_time           = var.complete_wait_time
+    vpc_subnet                   = var.subnetwork_name
+    zone                         = var.zone
+  })
+  custom-controller-install = var.controller_startup_script != null? var.controller_startup_script : file("${path.module}/../../../scripts/custom-controller-install")
+  custom-compute-install = var.compute_startup_script != null? var.compute_startup_script : file("${path.module}/../../../scripts/custom-compute-install")
 }
 
 resource "google_compute_disk" "secondary" {
@@ -41,7 +67,7 @@ resource "google_compute_instance" "controller_node" {
 
   boot_disk {
     initialize_params {
-      image = var.image
+      image = var.intel_select_solution == "software_only" || var.intel_select_solution == "full_config" ? "projects/${var.project}/global/images/schedmd-slurm-hpc-intel-controller" : var.image
       type  = var.boot_disk_type
       size  = var.boot_disk_size
     }
@@ -85,30 +111,10 @@ resource "google_compute_instance" "controller_node" {
     enable-oslogin = "TRUE"
     VmDnsSetting   = "GlobalOnly"
 
-    config = jsonencode({
-      cloudsql                     = var.cloudsql
-      cluster_name                 = var.cluster_name
-      compute_node_scopes          = var.compute_node_scopes
-      compute_node_service_account = var.compute_node_service_account == null ? data.google_compute_default_service_account.default.email : var.compute_node_service_account
-      controller_secondary_disk    = var.secondary_disk
-      external_compute_ips         = !var.disable_compute_public_ips
-      login_network_storage        = var.login_network_storage
-      login_node_count             = var.login_node_count
-      munge_key                    = var.munge_key
-      jwt_key                      = var.jwt_key
-      network_storage              = var.network_storage
-      partitions                   = var.partitions
-      project                      = var.project
-      region                       = var.region
-      shared_vpc_host_project      = var.shared_vpc_host_project
-      suspend_time                 = var.suspend_time
-      vpc_subnet                   = var.subnetwork_name
-      zone                         = var.zone
-    })
-
+    config                    = local.config
     cgroup_conf_tpl           = file("${path.module}/../../../etc/cgroup.conf.tpl")
-    custom-compute-install    = file("${path.module}/../../../scripts/custom-compute-install")
-    custom-controller-install = file("${path.module}/../../../scripts/custom-controller-install")
+    custom-compute-install    = local.custom-compute-install
+    custom-controller-install = local.custom-controller-install
     setup-script              = file("${path.module}/../../../scripts/setup.py")
     slurm-resume              = file("${path.module}/../../../scripts/resume.py")
     slurm-suspend             = file("${path.module}/../../../scripts/suspend.py")
@@ -181,31 +187,11 @@ resource "google_compute_instance_from_template" "controller_node" {
   metadata = {
     enable-oslogin = "TRUE"
     VmDnsSetting   = "GlobalOnly"
-
-    config = jsonencode({
-      cloudsql                     = var.cloudsql
-      cluster_name                 = var.cluster_name
-      compute_node_scopes          = var.compute_node_scopes
-      compute_node_service_account = var.compute_node_service_account == null ? data.google_compute_default_service_account.default.email : var.compute_node_service_account
-      controller_secondary_disk    = var.secondary_disk
-      external_compute_ips         = !var.disable_compute_public_ips
-      login_network_storage        = var.login_network_storage
-      login_node_count             = var.login_node_count
-      munge_key                    = var.munge_key
-      jwt_key                      = var.jwt_key
-      network_storage              = var.network_storage
-      partitions                   = var.partitions
-      project                      = var.project
-      region                       = var.region
-      shared_vpc_host_project      = var.shared_vpc_host_project
-      suspend_time                 = var.suspend_time
-      vpc_subnet                   = var.subnetwork_name
-      zone                         = var.zone
-    })
+    config         = local.config
 
     cgroup_conf_tpl           = file("${path.module}/../../../etc/cgroup.conf.tpl")
-    custom-compute-install    = file("${path.module}/../../../scripts/custom-compute-install")
-    custom-controller-install = file("${path.module}/../../../scripts/custom-controller-install")
+    custom-compute-install    = local.custom-compute-install
+    custom-controller-install = local.custom-controller-install
     setup-script              = file("${path.module}/../../../scripts/setup.py")
     slurm-resume              = file("${path.module}/../../../scripts/resume.py")
     slurm-suspend             = file("${path.module}/../../../scripts/suspend.py")
@@ -214,4 +200,11 @@ resource "google_compute_instance_from_template" "controller_node" {
     slurmsync                 = file("${path.module}/../../../scripts/slurmsync.py")
     util-script               = file("${path.module}/../../../scripts/util.py")
   }
+}
+
+resource "null_resource" "check_intel_validation" {
+  triggers = (var.intel_select_solution == null ||
+    var.intel_select_solution == "software_only" ||
+    (var.intel_select_solution == "full_config" && var.boot_disk_size >= 215) ? {} :
+  file("ERROR: Configuration failed as full_config requires boot_disk_size of the controller to be larger than 215 GB."))
 }

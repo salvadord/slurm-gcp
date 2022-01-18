@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python 
 # Copyright 2020 SchedMD LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,21 +48,15 @@ properties:
   serviceAccounts:
   - email: default
     scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  guestAccelerators:
-    - acceleratorType: projects/slurm-184304/zones/{zone}/acceleratorTypes/nvidia-tesla-v100
-      acceleratorCount: 1
-  scheduling:
-    onHostMaintenance: TERMINATE
   labels: {{}}
   metadata:
     items: []
 """
-
 meta_imports = {
-    'startup-script': 'scripts/startup.sh',
-    'util-script': 'scripts/util.py',
-    'setup-script': 'scripts/setup.py',
-    'fluentd-conf': 'etc/fluentd.conf',
+    'startup-script': '../scripts/startup-intel-select-solution.sh',
+    'util-script': '../scripts/util.py',
+    'setup-script': '../scripts/setup-intel-select-solution.py',
+    'fluentd-conf': '../etc/fluentd.conf',
 }
 
 
@@ -111,7 +105,7 @@ def generate_config(context):
         image_name = name_format.format(**keywords)
         meta['image_name'] = image_name
 
-        packages = spec['packages'] or f'scripts/{base}-packages'
+        packages = spec['packages'] or f'../scripts/{base}-packages'
         meta['packages'] = context.imports[packages]
 
         # Insert properties into yaml for conversion to resources dict
