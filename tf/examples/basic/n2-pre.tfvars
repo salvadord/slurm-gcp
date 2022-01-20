@@ -14,7 +14,7 @@ zone         = "us-east4-c"
 # complete_wait_time = 0
 
 controller_machine_type = "n2-standard-2"
-controller_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8"
+controller_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8dev99"
 controller_disk_type    = "pd-standard"
 controller_disk_size_gb = 1000
 # controller_labels = {
@@ -43,7 +43,7 @@ controller_disk_size_gb = 1000
 # EOT
 
 login_machine_type = "n2-standard-2"
-login_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8"
+login_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8dev99"
 login_disk_type    = "pd-standard"
 login_disk_size_gb = 20
 # login_labels = {
@@ -102,7 +102,7 @@ partitions = [
     static_node_count    = 0
     max_node_count       = 100
     zone                 = "us-east4-c"
-    image                = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8"
+    image                = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/schedmd-slurm-21-08-4-hpc-centos-7-neuron-8dev99"
     image_hyperthreads   = true
     compute_disk_type    = "pd-standard"
     compute_disk_size_gb = 20
@@ -111,7 +111,7 @@ partitions = [
     gpu_count            = 0
     gpu_type             = null
     network_storage      = []
-    preemptible_bursting = true
+    preemptible_bursting = false
     vpc_subnet           = null
     exclusive            = false
     enable_placement     = false
