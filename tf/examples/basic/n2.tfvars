@@ -1,4 +1,4 @@
-cluster_name = "g2-n2"
+cluster_name = "g1-n2"
 project      = "high-power-computing"
 zone         = "us-east4-c"
 
