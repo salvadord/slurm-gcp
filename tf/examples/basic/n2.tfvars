@@ -1,4 +1,4 @@
-cluster_name = "g1-n2"
+cluster_name = "g1-n2-highmem"
 project      = "high-power-computing"
 zone         = "us-east4-c"
 
@@ -98,7 +98,7 @@ login_disk_size_gb = 20
 
 partitions = [
   { name                 = "debug"
-    machine_type         = "n2-standard-80"
+    machine_type         = "n2-highmem-80"
     static_node_count    = 0
     max_node_count       = 100
     zone                 = "us-east4-c"
