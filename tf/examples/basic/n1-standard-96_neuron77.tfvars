@@ -1,7 +1,7 @@
 cluster_name = "g2-n1"
-project      = "ecas2-nsf1904444"
+project      = "high-power-computing"
 zone         = "us-central1-f"
-
+-v2
 # network_name            = "<existing network name>"
 # subnetwork_name         = "<existing subnetwork name>"
 # shared_vpc_host_project = "<vpc host project>"
@@ -13,7 +13,7 @@ zone         = "us-central1-f"
 # suspend_time  = 300
 
 controller_machine_type = "n1-highmem-16"
-controller_image        = "https://www.googleapis.com/compute/v1/projects/ecas2-nsf1904444/global/images/centos-7-neuron-7-7-netpyne" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
+controller_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/centos-7-neuron-7-7-netpyne-v2" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
 controller_disk_type    = "pd-standard"
 controller_disk_size_gb = 2000
 
@@ -34,7 +34,7 @@ controller_disk_size_gb = 2000
 # controller_secondary_disk_type = "pd-ssd"
 
 login_machine_type = "n1-standard-2"
-login_image        = "https://www.googleapis.com/compute/v1/projects/ecas2-nsf1904444/global/images/centos-7-neuron-7-7-netpyne" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
+login_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/centos-7-neuron-7-7-netpyne-v2" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
 login_disk_type    = "pd-standard"
 login_disk_size_gb = 20
 # login_labels = {
@@ -93,7 +93,7 @@ partitions = [
     static_node_count    = 0
     max_node_count       = 1000
     zone                 = "us-central1-f"
-    image                = "https://www.googleapis.com/compute/v1/projects/ecas2-nsf1904444/global/images/centos-7-neuron-7-7-netpyne" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
+    image                = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/centos-7-neuron-7-7-netpyne-v2" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
     image_hyperthreads   = false
     compute_disk_type    = "pd-standard"
     compute_disk_size_gb = 20
