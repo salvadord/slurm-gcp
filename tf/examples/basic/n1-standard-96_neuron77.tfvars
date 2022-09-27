@@ -1,7 +1,6 @@
 cluster_name = "g2-n1"
 project      = "high-power-computing"
 zone         = "us-central1-f"
--v2
 # network_name            = "<existing network name>"
 # subnetwork_name         = "<existing subnetwork name>"
 # shared_vpc_host_project = "<vpc host project>"
