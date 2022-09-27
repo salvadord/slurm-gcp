@@ -11,7 +11,7 @@ zone         = "us-central1-f"
 
 # suspend_time  = 300
 
-controller_machine_type = "n1-highmem-16"
+controller_machine_type = "n1-highmem-96"
 controller_image        = "https://www.googleapis.com/compute/v1/projects/high-power-computing/global/images/centos-7-neuron-7-7-netpyne-v2" #"projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7"
 controller_disk_type    = "pd-standard"
 controller_disk_size_gb = 2000
